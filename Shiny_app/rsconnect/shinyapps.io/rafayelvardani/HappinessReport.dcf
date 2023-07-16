@@ -1,0 +1,13 @@
+name: HappinessReport
+title: HappinessReport
+username:
+account: rafayelvardani
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 7820505
+bundleId: 6595653
+url: https://rafayelvardani.shinyapps.io/HappinessReport/
+when: 1670272100.47681
+lastSyncTime: 1670272100.47781
+asMultiple: FALSE
+asStatic: FALSE

@@ -1,0 +1,341 @@
+---
+title: "World Happiness Report with visualizations"
+author: "Sona Khloyan, Rafayel Mnatsakanyan, Pertchuhi Proshyan"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    fig_caption: yes
+    fig_height: 3.5
+    fig_width: 6
+    number_sections: yes
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+  word_document:
+    toc: yes
+always_allow_html: yes
+linestretch: 2
+header-includes:
+- \usepackage{float}
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F)
+library(RColorBrewer)
+library(plyr)
+library(DT)
+library(readxl)
+library(MASS)
+library(ggthemes)
+library(gridExtra)
+library(rgdal)
+library(ggplot2)
+library(knitr)
+library(dplyr)
+library(formatR)
+library(sf)
+library(jpeg)
+library(raster)
+library(maps)
+library(rnaturalearth)
+library(rgeos)
+library(classInt)
+library(tidyr)
+library(plotly)
+library(parameters)
+library(kableExtra)
+library(lemon)
+knit_print.data.frame <- lemon_print
+
+```
+
+```{r, echo=FALSE}
+# data manipulation
+df <- read_excel("happiness.xls")
+colnames(df) <- c('country','year','happiness','gdp', 'soc_support', 'hle',
+                  'freedom', 'generosity', 'corruption', 'positive', 'negative', 'conf_gov')
+df <- subset(df, year>=2010 & year<=2020)
+df <- df %>% 
+  group_by(country) %>% 
+  mutate_if(is.numeric, ~replace_na(., mean(., na.rm = TRUE)))
+
+world <- ne_countries(returnclass='sf')
+
+df_mean <- df %>%
+  group_by(country) %>%
+  summarise_at(c('happiness','gdp', 'soc_support', 'hle',
+                 'freedom', 'generosity', 'corruption', 'positive', 'negative',
+                 'conf_gov'), mean, na.rm = TRUE)
+
+df_mean <- na.omit(df_mean)
+
+world_mean <- world %>%
+  left_join(df_mean[,c('country', 'happiness','gdp', 'soc_support', 'hle',
+                       'freedom', 'generosity', 'corruption', 'positive', 'negative',
+                       'conf_gov')],by = c('name' = 'country'))
+
+world_clean<-subset(world_mean, world_mean$continent!="Antarctica" & 
+                      world_mean$continent!="Seven seas (open ocean)")
+
+correlation_matrix <- round(cor(df_mean[2:11], use = "complete.obs"),2)
+melted_cormat <- reshape2::melt(correlation_matrix)
+```
+
+\newpage
+
+# Overview
+
+Happiness has been shown to predict positive outcomes in many different areas of life, including mental well-being, physical health, and overall longevity. Hence, the topic for the Data visualization course project has been analyzing the dependency between the happiness rate and other indicators (i.e. GDP per capita, Corruption rate, Freedom to make choices, etc.) by countries and continents.  
+This report includes the hypothesis and appropriate visualizations based on the dataset enhanced from the World Happiness report. The main findings and outcomes are visualized in an interactive dashboard (Appendix 1) created by R Shiny. The dashboard can be used to analyse patterns between any other variables included in the dataset.
+
+
+# Research methodology
+
+In terms of this research, we have chosen the World Happiness report webpage as a data source (Helliwell, 2022). All the analysis and visualisation processes have been held in R. Initially, we have filtered the data for the time period from 2010 to 2020. After, we did data cleaning using dplyr library from RStudio and replaced all the Null values with the ten-year average of a certain variable for the particular country.  For geographical visualisations, we have used a built-in World dataset from the SimpleFeatures R package and merged the datasets. After the data processing and cleaning phase, we created scatterplots, histograms, and boxplots using the ggplot2 R package and plotly package for the heatmap. To make our analysis more user-friendly, with the help of R Shiny we created an interactive application. <br>
+Table 1 represents a little sample of our filtered dataset. The data contains 12 columns:
+year, country, happiness score, GDP per capita, social support, Healthy Life Expectancy, freedom to make life choices, generosity, corruption perception, positive affect, negative affect, and confidence in government.
+
+
+```{r, echo=FALSE}
+kable(df[35:45, ], caption = "World Happiness Report dataset", booktabs = T) %>%
+  kable_styling(position = "center", latex_options = "scale_down", row_label_position="c")
+```
+
+
+\newpage
+
+<pre>
+
+
+
+</pre>
+
+# Literature review
+
+In the "Happiness Score Identification: A Regression Approach" paper, Yichen Ma et al. presented the regression charts of economy, family, health, freedom, perception of corruption, and generosity with happiness from 2015 and 2019. They used the regression approach, which features an interrelation of several independent variables, commonly known as x, and one dependent variable, commonly known as y, and offers an insight into the future trend. The performance of the regression lines of all the factors against the happiness score discovered which factor contributes the most to the happiness score. The strength of correlation (a good, moderate, or bad correlation), the slope, and the Rsquare furthered the understanding of the factors. Both the linear regression and multiple regression with the factors in the Countries of the World and the residuals in the World Happiness Report, bad correlations, and very low R-squares, emerged on regression graphs. Following the findings that a relationship between last year's happiness score and this year's residual exists, the 2020 residual values were predicted. They fitted each year's residual happiness score data into a linear regression model and used that model to predict the 2020 residual value. (Ma et al., 2020)
+
+\newpage
+
+# Analysis
+
+After data collection, processing, cleaning and merging, we have formulated a number of hypotheses.
+
+## Hypothesis №1
+
+Our first hypothesis is that a higher GDP per capita in a particular country positively affects people's happiness.
+
+```{r, echo=FALSE}
+# scatter plot example
+ggplot(data = world_clean, aes(x = world_clean$gdp, y = world_clean$happiness)) + 
+      geom_point(aes(color = continent)) + 
+      geom_smooth(aes(color = continent), method=lm, se=FALSE) + 
+      labs(title="Relationship between GDP and Happiness scores",
+           x= "GDP", y = "Happiness") + theme_classic()
+```
+
+There is a slightly increasing pattern in the case of Europe, North America and Oceania. GDP per capita affects positively on happiness rate in Africa and South America as well. So far, we can conclude from the scatterplot above that our hypothesis is accepted.
+
+\newpage
+
+## Hypothesis №2
+
+Our second hypothesis is that a higher corruption rate affects people's happiness negatively anywhere. 
+
+```{r, echo=FALSE}
+# scatter plot example
+ggplot(data = world_clean, aes(x = corruption, y = world_clean$happiness)) + 
+      geom_point(aes(color = continent)) + 
+      geom_smooth(aes(color = continent), method=lm, se=FALSE) + 
+      labs(title="Relationship between Corruption and Happiness scores",
+           x= "Corruption", y = "Happiness") + theme_classic()
+```
+
+In Europe, North America and South America it is obvious that the higher corruption rate in the country makes people feel quite unhappy. In the case of Asia, we can conclude that the corruption rate does not affect the happiness rate of people significantly. The surprising facts are that in Oceania and Africa the correlation between the corruption rate and happiness rate is positive: a higher corruption rate makes people feel happier. So by these observations, we reject our hypothesis about the higher corruption rate affecting people's happiness negatively anywhere in the World.
+
+\newpage
+
+## Hypothesis №3
+
+Our third hypothesis is that freedom to make life choices in a particular country positively affects people's happiness.
+
+```{r, echo=FALSE}
+# scatter plot example
+ggplot(data = world_clean, aes(x = freedom, y = world_clean$happiness)) + 
+      geom_point(aes(color = continent)) + 
+      geom_smooth(aes(color = continent), method=lm, se=FALSE) + 
+      labs(title="Relationship between Freedom and Happiness scores",
+           x= "Freedom", y = "Happiness") + theme_classic()
+```
+
+It is obvious that in every continent, freedom to make life choices makes people happier and increases the happiness rate. <br>
+So, our hypothesis that the freedom to make life choices positively affects people's happiness is accepted.
+
+\newpage
+
+## Hypothesis №4
+
+Our fourth hypothesis is that the continent's lowest happiness rate belongs to Africa.
+
+## Hypothesis №5
+
+The most differentiated happiness rates among the continents belong to Asia.
+
+```{r, echo=FALSE}
+# histogram
+ggplot(world_clean, aes(x = happiness, fill=income_grp)) +
+        geom_histogram(alpha = 0.3) + 
+        facet_wrap(.~continent, scales = "free_y") + 
+        stat_bin(bins = 100) +  
+        labs(title="Distribution of happiness per continent", x="Happiness", y="") + 
+        theme(legend.title = element_blank(), legend.position = "top",
+              legend.direction = "horizontal", 
+              panel.grid = element_line(linetype = "dotted", linewidth = 0.7)) +
+        scale_fill_brewer(palette = "Set2", name="Income group") + theme_bw()
+```
+
+Concluding from the histograms plotted above, the highest happiness rate in African countries does not exceed 5.2, while in the rest of the continents, it's relatively higher.  Also, happiness rates are mostly differentiated in Asia. In Europe, Oceania, North America and South America, the situation is relatively oriented and constant. Hence, both hypotheses about Africa having the lowest happiness rate and Asia having the most differentiated happiness rates among the continents are accepted.
+
+\newpage
+
+## Hypothesis №6
+
+The happiness index is positively correlated with GDP per Capita, Freedom to make life choices, Healthy life expectancy, and Social support.
+
+
+```{r, echo=FALSE}
+# corr matrix
+ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) +
+                 geom_tile() + 
+  geom_text(aes(Var1, Var2, label = value),
+          color = "black", size = 4) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(title = "Correlation heatmap", x="", y="") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white",
+                       midpoint = 0, limit = c(-1,1), space =  "Lab", name="Correlation")
+```
+
+The correlation scores among happiness rate and GDP per Capita, Freedom to make life choices, Healthy life expectancy, and Social support are respectively 0.82, 0.59, 0.8 and 0.78. As all the correlation values are positive, our hypothesis about the positive correlation between happiness rate and GDP per Capita, Freedom to make life choices, Healthy life expectancy, and Social support is accepted.
+
+\newpage
+
+## Hypothesis №7
+
+Our hypothesis is that in the period of 2015 to 2020, the happiness index over the World decreased.
+
+```{r, echo = FALSE}
+df1 <- df %>% filter(year==2015) 
+world1 <- world %>% 
+        left_join(df1[,c('country','year','happiness','gdp', 'soc_support', 'hle',
+                         'freedom', 'generosity', 'corruption', 'positive',
+                         'negative', 'conf_gov')],by = c('name' = 'country'))
+p2015 <- ggplot(world1) + 
+  geom_sf(aes(fill=happiness)) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) +
+        scale_fill_viridis_c()
+
+df1 <- df %>% filter(year==2016) 
+world1 <- world %>% 
+        left_join(df1[,c('country','year','happiness','gdp', 'soc_support', 'hle',
+                         'freedom', 'generosity', 'corruption', 'positive',
+                         'negative', 'conf_gov')],by = c('name' = 'country'))
+p2016 <- ggplot(world1) + 
+  geom_sf(aes(fill=happiness)) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) +
+        scale_fill_viridis_c()
+
+df1 <- df %>% filter(year==2017) 
+world1 <- world %>% 
+        left_join(df1[,c('country','year','happiness','gdp', 'soc_support', 'hle',
+                         'freedom', 'generosity', 'corruption', 'positive',
+                         'negative', 'conf_gov')],by = c('name' = 'country'))
+p2017 <- ggplot(world1) + 
+  geom_sf(aes(fill=happiness)) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) +
+        scale_fill_viridis_c()
+
+df1 <- df %>% filter(year==2018) 
+world1 <- world %>% 
+        left_join(df1[,c('country','year','happiness','gdp', 'soc_support', 'hle',
+                         'freedom', 'generosity', 'corruption', 'positive',
+                         'negative', 'conf_gov')],by = c('name' = 'country'))
+p2018 <- ggplot(world1) + 
+  geom_sf(aes(fill=happiness)) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) +
+        scale_fill_viridis_c()
+
+df1 <- df %>% filter(year==2019) 
+world1 <- world %>% 
+        left_join(df1[,c('country','year','happiness','gdp', 'soc_support', 'hle',
+                         'freedom', 'generosity', 'corruption', 'positive',
+                         'negative', 'conf_gov')],by = c('name' = 'country'))
+p2019 <- ggplot(world1) + 
+  geom_sf(aes(fill=happiness)) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) +
+        scale_fill_viridis_c()
+
+df1 <- df %>% filter(year==2020) 
+world1 <- world %>% 
+        left_join(df1[,c('country','year','happiness','gdp', 'soc_support', 'hle',
+                         'freedom', 'generosity', 'corruption', 'positive',
+                         'negative', 'conf_gov')],by = c('name' = 'country'))
+p2020 <- ggplot(world1) + 
+  geom_sf(aes(fill=happiness)) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) +
+        scale_fill_viridis_c()
+```
+
+```{r, echo = FALSE}
+ggpubr::ggarrange(p2015, p2016, p2017, p2018, p2019, p2020,
+                  labels = c("2015", "2016", "2017", "2018", "2019", "2020"),
+                  ncol = 3, nrow = 2, common.legend = TRUE)
+```
+
+
+The above maps show that the yellow-colored countries have a high happiness rate and the blue-colored countries have a lower happiness rate. So starting from  2015, the amount of yellow-colored countries is becoming green. Hence the happiness rate is decreasing. And visually, each year, the map is getting greener. <br>
+Hence, the hypothesis that in the period of 2015 to 2020, the happiness index over the World decreased is approved.
+
+\newpage
+
+## Hypothesis №8
+
+The wealthier the country, the happier people live there.
+
+```{r, echo=FALSE}
+ggplot(data = world_clean, aes(y = happiness, x = income_grp,
+                                          fill = income_grp)) + 
+      geom_boxplot(alpha = 0.7) +  
+        labs(title="Distribution of happiness by income groups",
+             x="Income Groups", y="Happiness")  + 
+        theme(axis.text.x = element_blank()) + 
+  scale_fill_discrete(name = "Income Group")
+```
+
+As we can see from the boxplot above, the higher-income countries have a higher average happiness rate. This outcome was quite expected as we already analysed that the happiness rate is positively correlated with GDP. Hence, it is natural for higher-income countries to have higher happiness rates.
+
+\newpage
+
+# Conclusions and recommendations
+
+In this paper, we presented the relationship between the happiness rate and other indicators, such as GDP per Capita, Corruption rate, etc. <br>
+Our visualisations show that GDP per Capita, Corruption rate, Freedom to make life choices, Trust towards the Government and the rest of the factors somehow affect the happiness rate. Our interesting findings are that in some parts of the World, these factors can perform in different directions. To demonstrate, corruption rate can surprisingly increase the happiness rate in some parts of the World and, more interestingly, contradictorily, the trust rate towards the local Government sometimes makes the happiness level go down. Expectedly, the happiness rate has gradually decreased over the 2015-2020 time period, and the World has gone sadder. We are positive to think that the same analysis to be conducted for the next decade will demonstrate completely reversed results, and we’ll see happier results.
+
+# References
+
+Ma, Y., Liu, A., Hu, X., & Shao, Y. (2020). HAPPINESS SCORE IDENTIFICATION: A REGRESSION APPROACH. E3S Web of Conferences, 218, 01051.
+Helliwell, J. F. (2022, March 18). World Happiness Report 2022 | The World Happiness Report. https://worldhappiness.report/ed/2022/
+
+\newpage
+
+# Appendices
+
+## Appendix 1
+
+[Interactive dashboard created with R Shiny.](https://rafayelvardani.shinyapps.io/HappinessReport/?fbclid=IwAR1Sch0a-F2eojH1q4OimuVaedaL0mwhT3E0ztLaUvN--UgIH-uugl7y4qE) 
+
+## Appendix 2
+
+The table below represents the metadata of our dataset:
+
+![Metadata](metadata.jpg)
